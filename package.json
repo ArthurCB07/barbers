@@ -1,0 +1,56 @@
+{
+  "name": "barberverse-3d",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Barbearia virtual 3D com agendamentos reais, gestão de equipe, comissões e painel administrativo.",
+  "scripts": {
+    "dev": "next dev",
+    "build": "prisma generate && next build",
+    "start": "next start",
+    "lint": "tsc --noEmit",
+    "db:push": "prisma db push",
+    "db:migrate": "prisma migrate dev",
+    "db:deploy": "prisma migrate deploy",
+    "db:seed": "tsx supabase/seed/seed.ts",
+    "db:reset": "prisma migrate reset --force --skip-seed && tsx supabase/seed/seed.ts",
+    "notifications:run": "tsx src/server/jobs/run-outbox.ts",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "prisma": {
+    "schema": "prisma/schema.prisma",
+    "seed": "tsx supabase/seed/seed.ts"
+  },
+  "dependencies": {
+    "@prisma/client": "6.19.3",
+    "@react-three/drei": "10.7.9",
+    "@react-three/fiber": "9.8.2",
+    "@react-three/postprocessing": "3.2.2",
+    "bcryptjs": "3.0.3",
+    "lucide-react": "1.76.0",
+    "next": "15.5.29",
+    "postprocessing": "6.39.6",
+    "react": "19.1.10",
+    "react-dom": "19.1.10",
+    "three": "0.187.0",
+    "zod": "3.25.76"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "4.3.5",
+    "@types/node": "22.15.30",
+    "@types/react": "19.1.8",
+    "@types/react-dom": "19.1.6",
+    "@types/three": "0.180.0",
+    "prisma": "6.19.3",
+    "tailwindcss": "4.3.5",
+    "tsx": "4.23.15",
+    "typescript": "5.9.3",
+    "vitest": "3.2.7"
+  },
+  "allowScripts": {
+    "prisma@6.19.3": true,
+    "@prisma/client@6.19.3": true,
+    "@prisma/engines@6.19.3": true,
+    "esbuild@0.28.2": true
+  }
+}

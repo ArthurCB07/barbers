@@ -1,0 +1,551 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// BARBERVERSE 3D — modelo de dados
+//
+// Desenvolvimento: SQLite (zero configuração).
+// Produção: troque provider para "postgresql" (Supabase Postgres) e gere as
+// migrações com `prisma migrate dev`. Políticas RLS complementares para
+// Supabase estão em supabase/migrations/.
+//
+// Valores monetários: inteiros em centavos (BRL). Datas: UTC.
+// "Enums" são strings validadas no servidor (src/types/domain.ts) para manter
+// compatibilidade entre SQLite e Postgres.
+// ─────────────────────────────────────────────────────────────────────────────
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+/// Estabelecimento (preparado para múltiplas unidades no futuro)
+model Shop {
+  id                     String   @id @default(cuid())
+  slug                   String   @unique
+  name                   String
+  tagline                String   @default("")
+  description            String   @default("")
+  address                String   @default("")
+  city                   String   @default("")
+  phone                  String   @default("")
+  whatsapp               String   @default("")
+  instagram              String   @default("")
+  logoUrl                String?
+  accentColor            String   @default("#c8a165")
+  timezone               String   @default("America/Sao_Paulo")
+  // Configurações de reserva
+  slotStepMinutes        Int      @default(15)
+  bufferMinutes          Int      @default(0)
+  minAdvanceMinutes      Int      @default(60)
+  maxAdvanceDays         Int      @default(45)
+  cancelPolicyHours      Int      @default(2)
+  autoConfirm            Boolean  @default(true)
+  cancellationPolicyText String   @default("")
+  // Permissões delegadas aos barbeiros
+  barberCanBlockAgenda   Boolean  @default(true)
+  barberCanEditPrices    Boolean  @default(false)
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  roles            RoleAssignment[]
+  barbers          BarberProfile[]
+  stations         Station[]
+  sceneConfig      SceneConfig?
+  categories       ServiceCategory[]
+  services         Service[]
+  hours            ShopHours[]
+  holidays         Holiday[]
+  appointments     Appointment[]
+  invites          Invite[]
+  partnerRequests  PartnerRequest[]
+  auditLogs        AuditLog[]
+  clientProfiles   ClientProfile[]
+  clientNotes      ClientNote[]
+  payouts          Payout[]
+}
+
+/// Identidade de autenticação única
+model User {
+  id               String    @id @default(cuid())
+  email            String    @unique
+  passwordHash     String
+  name             String
+  phone            String    @default("")
+  emailVerifiedAt  DateTime?
+  // Preferências de contato / consentimento (LGPD)
+  notifyEmail      Boolean   @default(true)
+  notifyWhatsapp   Boolean   @default(false)
+  acceptedTermsAt  DateTime?
+  anonymizedAt     DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  sessions         Session[]
+  roles            RoleAssignment[] @relation("RoleUser")
+  rolesGranted     RoleAssignment[] @relation("RoleGrantor")
+  barberProfile    BarberProfile?   @relation("BarberUser")
+  clientProfiles   ClientProfile[]
+  appointments     Appointment[]    @relation("ClientAppointments")
+  notifications    Notification[]
+  favorites        Favorite[]
+  resetTokens      PasswordResetToken[]
+  appointmentEvents AppointmentEvent[]
+}
+
+model Session {
+  id          String   @id @default(cuid())
+  tokenHash   String   @unique
+  userId      String
+  activeRole  String   // CLIENT | BARBER | ADMIN
+  expiresAt   DateTime
+  createdAt   DateTime @default(now())
+  lastSeenAt  DateTime @default(now())
+  userAgent   String   @default("")
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model PasswordResetToken {
+  id         String    @id @default(cuid())
+  tokenHash  String    @unique
+  userId     String
+  expiresAt  DateTime
+  usedAt     DateTime?
+  createdAt  DateTime  @default(now())
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+/// Papéis por estabelecimento. Um usuário pode ter vários.
+model RoleAssignment {
+  id          String   @id @default(cuid())
+  userId      String
+  shopId      String
+  role        String   // CLIENT | BARBER | ADMIN
+  grantedById String?
+  createdAt   DateTime @default(now())
+  user        User     @relation("RoleUser", fields: [userId], references: [id], onDelete: Cascade)
+  grantedBy   User?    @relation("RoleGrantor", fields: [grantedById], references: [id])
+  shop        Shop     @relation(fields: [shopId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, shopId, role])
+  @@index([shopId, role])
+}
+
+/// Dados do cliente específicos do estabelecimento
+model ClientProfile {
+  id                String   @id @default(cuid())
+  userId            String
+  shopId            String
+  preferences       String   @default("")
+  sharePreferences  Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  shop              Shop     @relation(fields: [shopId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, shopId])
+}
+
+/// Observações internas sobre clientes (apenas administradores)
+model ClientNote {
+  id            String   @id @default(cuid())
+  shopId        String
+  clientUserId  String
+  authorId      String
+  body          String
+  createdAt     DateTime @default(now())
+  shop          Shop     @relation(fields: [shopId], references: [id], onDelete: Cascade)
+
+  @@index([shopId, clientUserId])
+}
+
+model Favorite {
+  id              String        @id @default(cuid())
+  userId          String
+  barberProfileId String
+  createdAt       DateTime      @default(now())
+  user            User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  barber          BarberProfile @relation(fields: [barberProfileId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, barberProfileId])
+}
+
+/// Perfil profissional. userId fica nulo enquanto um convite não é aceito.
+model BarberProfile {
+  id                 String    @id @default(cuid())
+  shopId             String
+  userId             String?   @unique
+  displayName        String
+  photoUrl           String?
+  bio                String    @default("")
+  specialties        String    @default("[]") // JSON string[]
+  experience         String    @default("")
+  // PENDING | NEEDS_INFO | APPROVED | REJECTED | INACTIVE | INVITED
+  status             String    @default("PENDING")
+  // Remuneração: PERCENT | PER_SERVICE | FIXED
+  commissionModel    String    @default("PERCENT")
+  commissionPercent  Int       @default(50)
+  fixedFeeCents      Int       @default(0)
+  partnershipType    String    @default("COMISSIONADO")
+  adminNote          String    @default("")
+  approvedAt         DateTime?
+  approvedById       String?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  shop             Shop              @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  user             User?             @relation("BarberUser", fields: [userId], references: [id])
+  station          Station?
+  services         BarberService[]
+  workingHours     WorkingHours[]
+  timeOff          TimeOff[]
+  appointments     Appointment[]
+  commissions      Commission[]
+  payouts          Payout[]
+  favorites        Favorite[]
+  partnerRequests  PartnerRequest[]
+  invites          Invite[]
+
+  @@index([shopId, status])
+}
+
+/// Solicitação espontânea de parceria ("Sou Barbeiro")
+model PartnerRequest {
+  id              String        @id @default(cuid())
+  shopId          String
+  barberProfileId String
+  // PENDING | NEEDS_INFO | APPROVED | REJECTED
+  status          String        @default("PENDING")
+  message         String        @default("")
+  reviewerNote    String        @default("")
+  reviewedById    String?
+  reviewedAt      DateTime?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  shop            Shop          @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  barber          BarberProfile @relation(fields: [barberProfileId], references: [id], onDelete: Cascade)
+
+  @@index([shopId, status])
+}
+
+/// Convite criado pelo administrador para um profissional concluir o cadastro
+model Invite {
+  id              String        @id @default(cuid())
+  shopId          String
+  email           String
+  tokenHash       String        @unique
+  barberProfileId String
+  createdById     String
+  expiresAt       DateTime
+  acceptedAt      DateTime?
+  revokedAt       DateTime?
+  createdAt       DateTime      @default(now())
+  shop            Shop          @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  barber          BarberProfile @relation(fields: [barberProfileId], references: [id], onDelete: Cascade)
+
+  @@index([shopId, email])
+}
+
+/// Estação 3D (cadeira + bancada + espelho). Campos "publicados" são o que o
+/// cliente vê; draftJson guarda alterações pendentes do editor de layout.
+model Station {
+  id              String         @id @default(cuid())
+  shopId          String
+  name            String
+  spotKey         String         // ponto seguro predefinido (src/features/barbershop-3d/layout.ts)
+  rotationY       Float          @default(0)
+  model           String         @default("classic") // classic | modern
+  accentColor     String         @default("#c8a165")
+  active          Boolean        @default(true)
+  barberProfileId String?        @unique
+  isPublished     Boolean        @default(false)
+  draftJson       String?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  shop            Shop           @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  barber          BarberProfile? @relation(fields: [barberProfileId], references: [id])
+  appointments    Appointment[]
+
+  @@index([shopId])
+}
+
+/// Configuração visual do ambiente (tema, móveis, fachada)
+model SceneConfig {
+  id            String    @id @default(cuid())
+  shopId        String    @unique
+  theme         String    @default("luxury-dark")
+  publishedJson String    @default("{}")
+  draftJson     String?
+  publishedAt   DateTime?
+  updatedAt     DateTime  @updatedAt
+  shop          Shop      @relation(fields: [shopId], references: [id], onDelete: Cascade)
+}
+
+model ServiceCategory {
+  id        String    @id @default(cuid())
+  shopId    String
+  name      String
+  sortOrder Int       @default(0)
+  shop      Shop      @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  services  Service[]
+
+  @@unique([shopId, name])
+}
+
+model Service {
+  id           String           @id @default(cuid())
+  shopId       String
+  categoryId   String?
+  name         String
+  description  String           @default("")
+  priceCents   Int
+  durationMin  Int
+  imageUrl     String?
+  active       Boolean          @default(true)
+  sortOrder    Int              @default(0)
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+  shop         Shop             @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  category     ServiceCategory? @relation(fields: [categoryId], references: [id])
+  barbers      BarberService[]
+  appointments Appointment[]
+
+  @@index([shopId, active])
+}
+
+/// Serviço habilitado por profissional, com preço/duração/comissão próprios
+model BarberService {
+  id                String        @id @default(cuid())
+  barberProfileId   String
+  serviceId         String
+  priceCents        Int?
+  durationMin       Int?
+  commissionPercent Int?
+  active            Boolean       @default(true)
+  barber            BarberProfile @relation(fields: [barberProfileId], references: [id], onDelete: Cascade)
+  service           Service       @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+
+  @@unique([barberProfileId, serviceId])
+}
+
+/// Horário de funcionamento do estabelecimento (minutos desde 00:00)
+model ShopHours {
+  id       String  @id @default(cuid())
+  shopId   String
+  weekday  Int     // 0 = domingo
+  openMin  Int
+  closeMin Int
+  closed   Boolean @default(false)
+  shop     Shop    @relation(fields: [shopId], references: [id], onDelete: Cascade)
+
+  @@unique([shopId, weekday])
+}
+
+/// Jornada de trabalho do profissional
+model WorkingHours {
+  id              String        @id @default(cuid())
+  barberProfileId String
+  weekday         Int
+  startMin        Int
+  endMin          Int
+  breakStartMin   Int?
+  breakEndMin     Int?
+  barber          BarberProfile @relation(fields: [barberProfileId], references: [id], onDelete: Cascade)
+
+  @@unique([barberProfileId, weekday])
+}
+
+model Holiday {
+  id     String @id @default(cuid())
+  shopId String
+  date   String // YYYY-MM-DD (fuso do estabelecimento)
+  name   String
+  shop   Shop   @relation(fields: [shopId], references: [id], onDelete: Cascade)
+
+  @@unique([shopId, date])
+}
+
+/// Folgas, férias e bloqueios manuais
+model TimeOff {
+  id              String        @id @default(cuid())
+  barberProfileId String
+  startsAt        DateTime
+  endsAt          DateTime
+  kind            String        // DAY_OFF | VACATION | BLOCK
+  reason          String        @default("")
+  status          String        @default("APPROVED") // PENDING | APPROVED | REJECTED
+  createdById     String
+  createdAt       DateTime      @default(now())
+  barber          BarberProfile @relation(fields: [barberProfileId], references: [id], onDelete: Cascade)
+
+  @@index([barberProfileId, startsAt])
+}
+
+model Appointment {
+  id              String    @id @default(cuid())
+  shopId          String
+  clientUserId    String
+  barberProfileId String
+  serviceId       String
+  stationId       String?
+  startsAt        DateTime
+  endsAt          DateTime
+  priceCents      Int       // snapshot no momento da reserva
+  durationMin     Int
+  // PENDING | CONFIRMED | IN_PROGRESS | COMPLETED | CANCELLED | NO_SHOW
+  status          String
+  clientNote      String    @default("")
+  cancelReason    String    @default("")
+  createdById     String
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  shop            Shop          @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  client          User          @relation("ClientAppointments", fields: [clientUserId], references: [id])
+  barber          BarberProfile @relation(fields: [barberProfileId], references: [id])
+  service         Service       @relation(fields: [serviceId], references: [id])
+  station         Station?      @relation(fields: [stationId], references: [id])
+  slots           AppointmentSlot[]
+  events          AppointmentEvent[]
+  payments        Payment[]
+  commission      Commission?
+
+  @@index([shopId, startsAt])
+  @@index([barberProfileId, startsAt])
+  @@index([clientUserId, startsAt])
+}
+
+/// Trava de horário em unidades de 5 minutos. A restrição única
+/// (barberProfileId, slotStart) garante, no próprio banco, que duas reservas
+/// nunca ocupem o mesmo intervalo — mesmo sob concorrência.
+model AppointmentSlot {
+  id              String      @id @default(cuid())
+  appointmentId   String
+  barberProfileId String
+  slotStart       DateTime
+  appointment     Appointment @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+
+  @@unique([barberProfileId, slotStart])
+  @@index([appointmentId])
+}
+
+/// Histórico de mudanças do atendimento (quem, quando, o quê)
+model AppointmentEvent {
+  id            String      @id @default(cuid())
+  appointmentId String
+  actorUserId   String?
+  action        String
+  fromStatus    String?
+  toStatus      String?
+  note          String      @default("")
+  createdAt     DateTime    @default(now())
+  appointment   Appointment @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+  actor         User?       @relation(fields: [actorUserId], references: [id])
+
+  @@index([appointmentId])
+}
+
+model Payment {
+  id            String      @id @default(cuid())
+  appointmentId String
+  amountCents   Int
+  method        String      // CASH | PIX | CREDIT_CARD | DEBIT_CARD | OTHER
+  provider      String      @default("MANUAL") // MANUAL | MERCADOPAGO (futuro)
+  status        String      // PENDING | CONFIRMED | VOIDED
+  reference     String      @default("")
+  recordedById  String
+  confirmedById String?
+  confirmedAt   DateTime?
+  createdAt     DateTime    @default(now())
+  appointment   Appointment @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+
+  @@index([appointmentId])
+}
+
+/// Comissão calculada no fechamento do atendimento. Snapshot imutável da regra.
+model Commission {
+  id              String        @id @default(cuid())
+  appointmentId   String        @unique
+  barberProfileId String
+  baseCents       Int
+  percent         Int
+  amountCents     Int
+  model           String
+  ruleSnapshot    String        @default("{}")
+  status          String        @default("OPEN") // OPEN | PAID
+  payoutId        String?
+  createdAt       DateTime      @default(now())
+  appointment     Appointment   @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+  barber          BarberProfile @relation(fields: [barberProfileId], references: [id])
+  payout          Payout?       @relation(fields: [payoutId], references: [id])
+
+  @@index([barberProfileId, status])
+}
+
+/// Repasse ao profissional
+model Payout {
+  id              String        @id @default(cuid())
+  shopId          String
+  barberProfileId String
+  amountCents     Int
+  note            String        @default("")
+  recordedById    String
+  createdAt       DateTime      @default(now())
+  shop            Shop          @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  barber          BarberProfile @relation(fields: [barberProfileId], references: [id])
+  commissions     Commission[]
+}
+
+model Notification {
+  id         String                 @id @default(cuid())
+  userId     String
+  type       String
+  title      String
+  body       String
+  link       String?
+  readAt     DateTime?
+  createdAt  DateTime               @default(now())
+  user       User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  deliveries NotificationDelivery[]
+
+  @@index([userId, createdAt])
+}
+
+/// Fila de entrega (outbox). dedupeKey único impede envios duplicados.
+model NotificationDelivery {
+  id             String       @id @default(cuid())
+  notificationId String
+  channel        String       // EMAIL | WHATSAPP
+  status         String       @default("QUEUED") // QUEUED | SENT | FAILED | SKIPPED
+  dedupeKey      String       @unique
+  attempts       Int          @default(0)
+  lastError      String       @default("")
+  sentAt         DateTime?
+  createdAt      DateTime     @default(now())
+  notification   Notification @relation(fields: [notificationId], references: [id], onDelete: Cascade)
+
+  @@index([status])
+}
+
+model AuditLog {
+  id          String   @id @default(cuid())
+  shopId      String
+  actorUserId String?
+  action      String
+  entity      String
+  entityId    String?
+  data        String   @default("{}")
+  createdAt   DateTime @default(now())
+  shop        Shop     @relation(fields: [shopId], references: [id], onDelete: Cascade)
+
+  @@index([shopId, createdAt])
+}
+
+/// Janela de rate limiting persistida (funciona com várias instâncias)
+model RateLimit {
+  key       String   @id
+  count     Int
+  windowEnd DateTime
+}
