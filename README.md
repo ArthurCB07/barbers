@@ -31,6 +31,14 @@ Sem seed (como em produção): abra `/setup` e informe o `SETUP_TOKEN` do `.env`
 | `npm run db:seed` | Dados de demonstração (bloqueado em produção) |
 | `npm run notifications:run` | Processa a fila de notificações e gera lembretes |
 
+## Demonstração estática (GitHub Pages)
+
+A pasta `demo/` gera uma vitrine estática com a barbearia 3D e dados de exemplo, **sem** login, agendamentos ou painéis. Ela é publicada a cada envio para `main` (ative em *Settings → Pages → Source: GitHub Actions*).
+
+```powershell
+npm run demo:build
+```
+
 ## Jornadas
 
 1. **Novo cliente** — "Sou cliente" → cadastro → barbearia 3D → clique na cadeira → serviço → data → horário livre → confirmação → "Meus agendamentos".

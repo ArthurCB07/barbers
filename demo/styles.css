@@ -1,0 +1,8 @@
+@import "../src/styles/globals.css";
+@source "./";
+@source "../src";
+
+:root {
+  --font-inter: "Inter";
+  --font-display-serif: "Cormorant Garamond";
+}

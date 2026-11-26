@@ -66,10 +66,13 @@ export interface ExperienceProps {
   embedded?: boolean;
   showPanel?: boolean;
   headerSlot?: React.ReactNode;
+  /** Vitrine estática: sem agenda, datas ou disponibilidade */
+  demo?: boolean;
 }
 
 export function BarbershopExperience(props: ExperienceProps) {
-  const { viewer, today, maxAdvanceDays, variant = "explore", embedded = false } = props;
+  const { viewer, today, maxAdvanceDays, variant = "explore", embedded = false, demo = false } = props;
+  const shortState = (state: string) => (demo ? "Ver serviços" : STATE_SHORT[state]);
   const [data, setData] = useState<SceneData>(props.initialData);
   const [date, setDate] = useState(props.initialData.date);
   const [webgl, setWebgl] = useState<{ supported: boolean; lowPower: boolean } | null>(null);
@@ -165,12 +168,12 @@ export function BarbershopExperience(props: ExperienceProps) {
           <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
             <div>
               {props.headerSlot && <div className="mb-5">{props.headerSlot}</div>}
-              <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-gold">Agendamento</p>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-gold">{demo ? "Equipe" : "Agendamento"}</p>
               <h1 className="mt-1 font-display text-4xl font-semibold">Escolha seu profissional</h1>
-              <p className="mt-1 text-sm text-smoke">Veja serviços, preços e os horários realmente livres.</p>
+              <p className="mt-1 text-sm text-smoke">{demo ? "Conheça os profissionais, serviços e preços de exemplo." : "Veja serviços, preços e os horários realmente livres."}</p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              <DatePill date={date} today={today} max={maxAdvanceDays} onChange={setDate} />
+              {!demo && <DatePill date={date} today={today} max={maxAdvanceDays} onChange={setDate} />}
               {webgl?.supported && (
                 <Button variant="outline" onClick={() => setMode2D(false)}>
                   <Box className="h-4 w-4" /> Ver em 3D
@@ -185,7 +188,7 @@ export function BarbershopExperience(props: ExperienceProps) {
             <ul className="grid min-w-0 grid-cols-1 content-start gap-3 sm:grid-cols-2 lg:grid-cols-1 2xl:grid-cols-2" aria-label="Profissionais">
               {visibleStations.map((s) => (
                 <li key={s.id} className="min-w-0">
-                  <StationCard s={s} active={selected === s.id} onClick={() => setSelected(s.id)} />
+                  <StationCard s={s} label={shortState(s.state)} active={selected === s.id} onClick={() => setSelected(s.id)} />
                 </li>
               ))}
             </ul>
@@ -259,7 +262,7 @@ export function BarbershopExperience(props: ExperienceProps) {
                 <span className="block text-[12px] font-medium text-cream">{s.barber?.displayName ?? s.name}</span>
                 <span className="flex items-center gap-1 text-[10px] text-mist">
                   <span className={cn("h-1.5 w-1.5 rounded-full", STATE_DOT[s.state])} />
-                  {active && s.barber && s.state === "AVAILABLE" && variant !== "preview" ? "Clique para agendar" : STATE_SHORT[s.state]}
+                  {active && s.barber && s.state === "AVAILABLE" && variant !== "preview" && !demo ? "Clique para agendar" : shortState(s.state)}
                 </span>
               </span>
             </button>
@@ -328,9 +331,11 @@ export function BarbershopExperience(props: ExperienceProps) {
       {variant === "explore" && (
         <div className={cn("pointer-events-none absolute inset-x-0 bottom-0 z-20 bg-gradient-to-t from-black/60 to-transparent p-3 pt-10 sm:p-4 sm:pt-12", selectedStation && showPanel && "max-lg:hidden lg:right-[456px]")}>
           <div className="pointer-events-auto mx-auto flex w-full max-w-4xl flex-col gap-2 sm:w-fit sm:max-w-full sm:flex-row sm:items-stretch">
-            <div className="glass flex shrink-0 items-center rounded-2xl px-3 py-2">
-              <DatePill date={date} today={today} max={maxAdvanceDays} onChange={setDate} bare />
-            </div>
+            {!demo && (
+              <div className="glass flex shrink-0 items-center rounded-2xl px-3 py-2">
+                <DatePill date={date} today={today} max={maxAdvanceDays} onChange={setDate} bare />
+              </div>
+            )}
             <div className="glass flex min-w-0 gap-1.5 overflow-x-auto rounded-2xl p-1.5" role="list" aria-label="Profissionais da barbearia">
               {visibleStations.map((s) => (
                 <button
@@ -348,7 +353,7 @@ export function BarbershopExperience(props: ExperienceProps) {
                   <span className="min-w-0">
                     <span className="block truncate text-sm font-medium text-cream">{s.barber?.displayName ?? s.name}</span>
                     <span className="flex items-center gap-1.5 text-[11px] text-smoke">
-                      <span className={cn("h-1.5 w-1.5 rounded-full", STATE_DOT[s.state])} /> {STATE_SHORT[s.state]}
+                      <span className={cn("h-1.5 w-1.5 rounded-full", STATE_DOT[s.state])} /> {shortState(s.state)}
                     </span>
                   </span>
                 </button>
@@ -405,7 +410,7 @@ function MenuItem({ children, onClick }: { children: React.ReactNode; onClick: (
   );
 }
 
-function StationCard({ s, active, onClick }: { s: SceneStation; active: boolean; onClick: () => void }) {
+function StationCard({ s, label, active, onClick }: { s: SceneStation; label: string; active: boolean; onClick: () => void }) {
   return (
     <button
       onClick={onClick}
@@ -417,7 +422,7 @@ function StationCard({ s, active, onClick }: { s: SceneStation; active: boolean;
         <span className="block truncate font-display text-xl text-cream">{s.barber?.displayName ?? s.name}</span>
         <span className="block truncate text-xs text-smoke">{s.barber?.specialties.slice(0, 3).join(" · ") || s.name}</span>
         <span className="mt-1.5 flex items-center gap-1.5 whitespace-nowrap text-xs text-mist">
-          <span className={cn("h-2 w-2 shrink-0 rounded-full", STATE_DOT[s.state])} /> <span className="truncate">{STATE_SHORT[s.state]}</span>
+          <span className={cn("h-2 w-2 shrink-0 rounded-full", STATE_DOT[s.state])} /> <span className="truncate">{label}</span>
         </span>
       </span>
       <Grid2x2 className="h-4 w-4 shrink-0 text-smoke opacity-0 transition group-hover:opacity-100" aria-hidden />
